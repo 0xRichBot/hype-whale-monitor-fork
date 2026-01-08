@@ -1,6 +1,5 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import { useRef, useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -11,7 +10,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ExternalLink, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
+import { ExternalLink, ArrowUpCircle, ArrowDownCircle, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface WhalePosition {
@@ -36,6 +35,8 @@ export function WhalePositionsTable() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const previousWhaleIds = useRef<Set<string>>(new Set());
+  const isFirstLoad = useRef(true);
 
   const fetchData = async () => {
         try {
@@ -46,12 +47,56 @@ export function WhalePositionsTable() {
                 setRefreshing(true);
             }
             
-            const res = await fetch("/api/whale-positions");
+            const res = await fetch("/api/whale-positions", { cache: 'no-store' });
             if (!res.ok) throw new Error("Failed to fetch data");
             
             const result = await res.json();
             if (result.code === 0 && Array.isArray(result.data)) {
-                setPositions(result.data);
+                const newPositions: WhalePosition[] = result.data;
+
+                // Alert logic for new whale positions
+                if (!isFirstLoad.current) {
+                    const novelWhales = newPositions.filter(p => !previousWhaleIds.current.has(p.user));
+                    novelWhales.forEach(pos => {
+                        const sideText = pos.positionSize > 0 ? "LONG" : "SHORT";
+                        const valueText = (pos.positionValueUsd / 1000).toFixed(0);
+                        const msg = `New Whale Position: ${sideText} $${valueText}K`;
+                        
+                        toast.info(msg, {
+                            icon: <Bell className="w-4 h-4 text-blue-500" />,
+                            duration: 10000,
+                            description: `User: ${pos.user.slice(0, 6)}...${pos.user.slice(-4)} | Size: ${Math.abs(pos.positionSize).toFixed(0)} HYPE`,
+                        });
+
+                        // Sync to Telegram if configured
+                        const tgToken = localStorage.getItem("tg_bot_token");
+                        const tgChatId = localStorage.getItem("tg_chat_id");
+                        if (tgToken && tgChatId) {
+                            const tgMsg = `🐋 *New Whale Position Alert*\n\n` +
+                                `User: \`${pos.user}\`\n` +
+                                `Side: *${sideText}*\n` +
+                                `Value: *$${pos.positionValueUsd.toLocaleString()}*\n` +
+                                `Size: \`${Math.abs(pos.positionSize).toLocaleString()} HYPE\`\n\n` +
+                                `[View on HypurrScan](https://hypurrscan.io/address/${pos.user})`;
+                            
+                            fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    chat_id: tgChatId,
+                                    text: tgMsg,
+                                    parse_mode: "Markdown",
+                                })
+                            }).catch(err => console.error("Whale alert Telegram failed", err));
+                        }
+                    });
+                }
+
+                // Update seen IDs
+                previousWhaleIds.current = new Set(newPositions.map(p => p.user));
+                isFirstLoad.current = false;
+
+                setPositions(newPositions);
                 setError(null);
             } else {
                 throw new Error("Invalid data format");

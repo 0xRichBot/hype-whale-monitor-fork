@@ -5,6 +5,7 @@ import { TwapTable } from "@/components/twap-table";
 import { LiquidationMap } from "@/components/liquidation-map";
 import { WhaleAnalysis } from "@/components/whale-analysis";
 import { WhalePositionsTable } from "@/components/whale-positions-table";
+import { TelegramConfig } from "@/components/telegram-config";
 import { Github } from "lucide-react";
 import { LiquidationMapResponse } from "@/lib/types";
 
@@ -17,7 +18,7 @@ export default function Home() {
   const fetchLiqData = async () => {
     if (liqData) setRefreshing(true);
     try {
-      const response = await fetch("/api/liquidation-map");
+      const response = await fetch("/api/liquidation-map", { cache: 'no-store' });
       if (!response.ok) throw new Error("Failed to fetch liquidation data");
       const result = await response.json();
       setLiqData(result);
@@ -75,6 +76,30 @@ export default function Home() {
             </p>
           </div>
         </header>
+
+        {/* Sub-Header / Control Bar */}
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-card/30 border border-border/40 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <TelegramConfig />
+             <a href="/simulator" className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 transition-colors border border-indigo-500/20 text-xs font-bold uppercase tracking-wider group">
+                 <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                 </svg>
+                 Simulator
+            </a>
+            <div className="h-4 w-px bg-border/40 hidden sm:block" />
+            <span className="text-xs text-muted-foreground hidden sm:block">
+              Set up your Telegram Bot to receive real-time whale alerts
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-[10px] uppercase tracking-wider font-bold text-muted-foreground/60">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live Monitoring
+            </span>
+          </div>
+        </div>
 
         {/* Impact Calculator & Heatmap Context */}
         <div className="grid gap-6">

@@ -76,7 +76,7 @@ export function TwapTable() {
   const fetchTwaps = async () => {
     if (!loading) setRefreshing(true);
     try {
-      const response = await fetch("/api/twaps");
+      const response = await fetch("/api/twaps", { cache: 'no-store' });
       if (!response.ok) {
         throw new Error("Failed to fetch TWAPs");
       }
@@ -90,6 +90,7 @@ export function TwapTable() {
             const sideText = twap.side === "BUY" ? "Buy" : "Sell";
             const amountText = (twap.sizeUsd / 100000).toFixed(0);
             const msg = `Large HYPE ${twap.marketType === 'SPOT' ? 'Spot' : 'Perp'} ${sideText} order, value $${Number(amountText)}00k`;
+            
             toast.success(msg, {
               icon: <Bell className="w-4 h-4" />,
               duration: 15000,
@@ -97,6 +98,29 @@ export function TwapTable() {
             });
             
             playVoiceAlert(msg);
+
+            // Sync to Telegram if configured
+            const tgToken = localStorage.getItem("tg_bot_token");
+            const tgChatId = localStorage.getItem("tg_chat_id");
+            if (tgToken && tgChatId) {
+              const tgMsg = `🔔 *HYPE Large Order Alert*\n\n` +
+                `Type: *${twap.marketType === 'SPOT' ? 'Spot' : 'Perp'} ${sideText}*\n` +
+                `Value: *$${Number(amountText)}00,000*\n` +
+                `Size: \`${formatSize(twap.size)} HYPE\`\n` +
+                `User: \`${twap.user}\`\n\n` +
+                `[View on HypurrScan](https://hypurrscan.io/address/${twap.user})`;
+              
+              fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  chat_id: tgChatId,
+                  text: tgMsg,
+                  parse_mode: "Markdown",
+                  disable_web_page_preview: false
+                })
+              }).catch(err => console.error("Telegram notification failed", err));
+            }
           }
         });
       }
@@ -167,42 +191,42 @@ export function TwapTable() {
               </div>
             )}
           </CardTitle>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {/* <span>Last update:</span>
-              <span className="font-medium text-foreground/80">
-                {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : "—"}
-              </span> */}
-              {refreshing && (
-                <span className="flex items-center gap-1 text-primary">
-                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Loading...
-                </span>
-              )}
-            </div>
-            <button
-              onClick={fetchTwaps}
-              disabled={loading || refreshing}
-              className="p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
-              title="Refresh"
-            >
-              <svg
-                className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {/* <span>Last update:</span>
+                <span className="font-medium text-foreground/80">
+                  {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : "—"}
+                </span> */}
+                {refreshing && (
+                  <span className="flex items-center gap-1 text-primary">
+                    <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Loading...
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={fetchTwaps}
+                disabled={loading || refreshing}
+                className="p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+                title="Refresh"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-            </button>
-          </div>
+                <svg
+                  className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
+                </svg>
+              </button>
+            </div>
         </div>
 
         {/* Summary Stats and Filters */}

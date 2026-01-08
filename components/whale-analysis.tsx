@@ -22,7 +22,7 @@ export function WhaleAnalysis() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/whale-analysis");
+      const res = await fetch("/api/whale-analysis", { cache: 'no-store' });
       if (!res.ok) throw new Error("Failed to fetch data");
       const result = await res.json();
       setData(result);
