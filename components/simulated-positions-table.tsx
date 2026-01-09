@@ -21,6 +21,7 @@ export interface SimulatedPosition {
   leverage: number;
   close_price?: number;
   pnl_percent?: number;
+  trigger_id?: string;
 }
 
 interface SimulatedPositionsTableProps {

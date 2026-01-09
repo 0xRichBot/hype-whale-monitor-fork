@@ -20,7 +20,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { entry_price, direction, amount_usd, leverage } = body;
+    const { entry_price, direction, amount_usd, leverage, trigger_id } = body;
 
     if (!entry_price || !direction) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -28,21 +28,22 @@ export async function POST(req: Request) {
 
     const { data, error } = await supabase
       .from("simulated_positions")
-      .insert([
+      .upsert([
         {
           entry_price,
           direction,
           amount_usd: amount_usd || 1000,
           leverage: leverage || 5,
           status: "OPEN",
+          trigger_id: trigger_id || null, // Optional for manual trades if any
         },
-      ])
+      ], { onConflict: "trigger_id", ignoreDuplicates: true })
       .select()
       .single();
 
-    if (error) throw error;
+    if (error && error.code !== "PGRST116") throw error; // PGRST116 is single record not found, happens if ignored
 
-    return NextResponse.json(data);
+    return NextResponse.json(data || { message: "Conflict or duplicate trigger_id ignored" });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

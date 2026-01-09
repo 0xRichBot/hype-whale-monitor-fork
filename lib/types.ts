@@ -65,6 +65,7 @@ export interface EnrichedTwap {
   randomize: boolean;
   status: "active" | "canceled" | "error" | "ended";
   hash: string;
+  price?: number;
 }
 
 // API response type

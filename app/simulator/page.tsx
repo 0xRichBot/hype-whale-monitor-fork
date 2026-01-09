@@ -17,10 +17,7 @@ export default function SimulatorPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Trigger State
-  const processedTwapsRef = useRef<Set<string>>(new Set());
   const lastDenseTriggerRef = useRef<{ BUY: number; SELL: number }>({ BUY: 0, SELL: 0 });
-  const isFirstLoad = useRef(true);
 
   // Fetch Positions
   const fetchPositions = async () => {
@@ -47,8 +44,8 @@ export default function SimulatorPage() {
       if (data.hypePrice) setHypePrice(data.hypePrice);
       setError(null);
       
-      // Check Triggers
-      checkTriggers(data.twaps, data.hypePrice || 0);
+      // Check Triggers (Passing latest positions for DB-backed trigger tracking)
+      checkTriggers(data.twaps, data.hypePrice || 0, positions);
 
       // Check Active Positions PnL
       checkPositionsPnL(data.hypePrice || 0);
@@ -70,11 +67,13 @@ export default function SimulatorPage() {
   };
 
   // Open Position Helper
-  const openPosition = async (direction: "BUY" | "SELL", price: number) => {
+  const openPosition = async (direction: "BUY" | "SELL", price: number, triggerId?: string) => {
     if (price <= 0) return;
     
     // Optimistic UI update? No, safer to wait DB.
-    toast.info(`Triggered Simulated ${direction} Position at $${price.toFixed(4)}`);
+    if (!triggerId) {
+        toast.info(`Triggered Simulated ${direction} Position at $${price.toFixed(4)}`);
+    }
 
     try {
       const res = await fetch("/api/simulator/positions", {
@@ -84,11 +83,12 @@ export default function SimulatorPage() {
           entry_price: price,
           direction,
           amount_usd: 1000,
-          leverage: 5
+          leverage: 5,
+          trigger_id: triggerId
         })
       });
       if (res.ok) {
-        toast.success("Position Opened Successfully");
+        if (!triggerId) toast.success("Position Opened Successfully");
         fetchPositions();
       }
     } catch (e) {
@@ -121,48 +121,63 @@ export default function SimulatorPage() {
   };
 
   // Trigger Logic
-  const checkTriggers = (currentTwaps: EnrichedTwap[], currentPrice: number) => {
+  const checkTriggers = (currentTwaps: EnrichedTwap[], currentPrice: number, existingPositions: SimulatedPosition[]) => {
     if (currentTwaps.length === 0 || currentPrice === 0) return;
-    if (isFirstLoad.current) {
-        processedTwapsRef.current = new Set(currentTwaps.map(t => t.id));
-        isFirstLoad.current = false;
-        return;
-    }
-
-    const newTwaps = currentTwaps.filter(t => !processedTwapsRef.current.has(t.id));
+    
+    const existingTriggerIds = new Set(existingPositions.map(p => p.trigger_id).filter(Boolean));
 
     // 1. Large Order Trigger (> 1M)
-    newTwaps.forEach(t => {
+    // We check ALL twaps for backfill, not just new ones
+    currentTwaps.forEach(t => {
         if (t.sizeUsd > 1_000_000) {
-            console.log("Trigger: Large Order detected", t);
-            openPosition(t.side, currentPrice);
+            const triggerId = `large_${t.id}`;
+            if (!existingTriggerIds.has(triggerId)) {
+                console.log("Trigger: Backfilling/Opening Large Order", triggerId);
+                // For backfill, we use the TWAP price if it's old, otherwise currentPrice
+                const entryPrice = t.price || currentPrice;
+                openPosition(t.side, entryPrice, triggerId);
+                existingTriggerIds.add(triggerId); // Avoid multi-open in same loop
+            }
         }
     });
 
     // 2. Dense Orders Trigger (10 orders in 10 mins)
-    const tenMinsAgo = Date.now() - 10 * 60 * 1000;
-    const recentTwaps = currentTwaps.filter(t => t.time > tenMinsAgo);
+    // Strategy: Bucket orders into 10 min windows
+    const sortedTwaps = [...currentTwaps].sort((a, b) => a.time - b.time);
+    if (sortedTwaps.length < 10) return;
+
+    const WINDOW_MS = 10 * 60 * 1000;
     
-    const buyCount = recentTwaps.filter(t => t.side === "BUY").length;
-    const sellCount = recentTwaps.filter(t => t.side === "SELL").length;
-    
-    const now = Date.now();
-    const COOLDOWN = 10 * 60 * 1000; // 10 mins cooldown for dense trigger
+    // We'll iterate through all TWAPs and check sliding windows or fixed buckets?
+    // Sliding window is more accurate for "within 10 mins".
+    for (let i = 0; i <= sortedTwaps.length - 10; i++) {
+        const window = sortedTwaps.slice(i);
+        const startTime = window[0].time;
+        const endTime = startTime + WINDOW_MS;
+        
+        const inWindow = window.filter(t => t.time <= endTime);
+        if (inWindow.length >= 10) {
+            const buys = inWindow.filter(t => t.side === "BUY");
+            const sells = inWindow.filter(t => t.side === "SELL");
 
-    if (buyCount >= 10 && (now - lastDenseTriggerRef.current.BUY > COOLDOWN)) {
-        console.log("Trigger: Dense BUY Orders detected");
-        openPosition("BUY", currentPrice);
-        lastDenseTriggerRef.current.BUY = now;
+            if (buys.length >= 10) {
+                const triggerId = `dense_${inWindow[0].id}_BUY`;
+                if (!existingTriggerIds.has(triggerId)) {
+                    openPosition("BUY", inWindow[inWindow.length - 1].price || currentPrice, triggerId);
+                    existingTriggerIds.add(triggerId);
+                    i += inWindow.length - 1; // Skip ahead
+                }
+            }
+            if (sells.length >= 10) {
+                const triggerId = `dense_${inWindow[0].id}_SELL`;
+                if (!existingTriggerIds.has(triggerId)) {
+                    openPosition("SELL", inWindow[inWindow.length - 1].price || currentPrice, triggerId);
+                    existingTriggerIds.add(triggerId);
+                    i += inWindow.length - 1; // Skip ahead
+                }
+            }
+        }
     }
-
-    if (sellCount >= 10 && (now - lastDenseTriggerRef.current.SELL > COOLDOWN)) {
-        console.log("Trigger: Dense SELL Orders detected");
-        openPosition("SELL", currentPrice);
-        lastDenseTriggerRef.current.SELL = now;
-    }
-
-    // Update processed
-    currentTwaps.forEach(t => processedTwapsRef.current.add(t.id));
   };
 
 

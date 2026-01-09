@@ -7,5 +7,6 @@ create table if not exists simulated_positions (
   amount_usd numeric default 1000,
   leverage numeric default 5,
   close_price numeric,
-  pnl_percent numeric
+  pnl_percent numeric,
+  trigger_id text unique -- Unique ID to prevent duplicate positions (e.g., 'twap_123' or 'dense_time_side')
 );
